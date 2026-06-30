@@ -432,22 +432,29 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def get_local_ip() -> str:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Distributed chat server with multicast discovery and Bully election")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default=None)
     parser.add_argument("--client-port", type=int, default=None)
     parser.add_argument("--server-port", type=int, default=None)
     parser.add_argument("--multicast-group", default=MULTICAST_GROUP)
     parser.add_argument("--discovery-port", type=int, default=DISCOVERY_PORT)
     args = parser.parse_args()
 
+    host = args.host or get_local_ip()
     client_port = args.client_port or find_free_port()
     server_port = args.server_port or find_free_port()
-    server_id = derive_server_id(args.host, server_port)
+    server_id = derive_server_id(host, server_port)
 
     ChatServer(
         server_id=server_id,
-        host=args.host,
+        host=host,
         client_port=client_port,
         server_port=server_port,
         multicast_group=args.multicast_group,
