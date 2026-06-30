@@ -125,7 +125,7 @@ class ChatServer:
     def server_listener(self) -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((self.host, self.server_port))
+        sock.bind(("0.0.0.0", self.server_port))
         while self.running:
             try:
                 data, address = sock.recvfrom(BUFFER_SIZE)
@@ -208,7 +208,7 @@ class ChatServer:
     def client_listener(self) -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((self.host, self.client_port))
+        sock.bind(("0.0.0.0", self.client_port))
         sock.listen(50)
         while self.running:
             conn, address = sock.accept()
