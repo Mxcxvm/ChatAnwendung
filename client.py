@@ -1,4 +1,5 @@
 import argparse
+import queue
 import socket
 import threading
 import time
@@ -8,6 +9,7 @@ from protocol import *
 
 MULTICAST_GROUP = "224.1.1.1"
 DISCOVERY_PORT = 5973
+RECONNECT_DELAY = 2.0
 
 
 def discover_coordinator(
@@ -50,31 +52,55 @@ def discover_coordinator(
         sock.close()
 
 
-def receive_loop(sock: socket.socket) -> None:
+def receive_loop(
+    sock: socket.socket,
+    reconnect_event: threading.Event,
+    redirect_holder: Dict,
+    is_rejoin: bool,
+    last_sequence: Dict,
+) -> None:
     try:
         for message in read_json_lines(sock):
             msg_type = message.get("type")
             payload = message.get("payload", {})
 
             if msg_type == JOIN_ACCEPTED:
-                print(f"Joined room '{payload['room']}' as {payload['client_id']}")
-                print("Participants:", ", ".join(payload.get("participants", [])))
-
-                for item in payload.get("recent_messages", []):
-                    print(f"#{item['sequence']} {item['sender_name']}: {item['text']}")
+                if not is_rejoin:
+                    print(f"Joined room '{payload['room']}' as {payload['client_id']}")
+                    print("Participants:", ", ".join(payload.get("participants", [])))
+                    for item in payload.get("recent_messages", []):
+                        print(f"#{item['sequence']} {item['sender_name']}: {item['text']}")
+                        last_sequence["seq"] = item["sequence"]
 
             elif msg_type == ORDERED_MESSAGE:
                 item = payload["message"]
-                print(f"#{item['sequence']} {item['sender_name']}: {item['text']}")
+                seq = item["sequence"]
+                if seq > last_sequence["seq"]:
+                    print(f"#{seq} {item['sender_name']}: {item['text']}")
+                    last_sequence["seq"] = seq
 
             elif msg_type == REDIRECT:
-                print("Redirected to coordinator:", payload.get("coordinator"))
+                coord = payload.get("coordinator")
+                if coord:
+                    redirect_holder["coordinator"] = coord
 
             elif msg_type == ERROR:
                 print("Error:", payload.get("reason"))
 
-    except Exception as exc:
-        print("receive loop stopped:", exc)
+    except Exception:
+        pass
+    finally:
+        reconnect_event.set()
+
+
+def input_reader(input_queue: queue.Queue) -> None:
+    while True:
+        try:
+            text = input()
+            input_queue.put(text)
+        except EOFError:
+            input_queue.put(None)
+            break
 
 
 def main() -> None:
@@ -89,7 +115,6 @@ def main() -> None:
     parser.add_argument("--multicast-group", default=MULTICAST_GROUP)
     parser.add_argument("--discovery-port", type=int, default=DISCOVERY_PORT)
 
-    # Neu: Direktverbindung über VPN/IP
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
 
@@ -98,58 +123,98 @@ def main() -> None:
     if (args.host is None) != (args.port is None):
         parser.error("Bitte entweder --host und --port zusammen angeben oder beide weglassen.")
 
+    username = args.username
+    room = args.room
+    client_id = args.client_id or new_id("client")
+
     if args.host and args.port:
-        coordinator = {
+        static_coordinator = {
             "server_id": "manual",
             "host": args.host,
             "client_port": args.port,
         }
         print(f"Using direct connection: {args.host}:{args.port}")
     else:
-        coordinator = discover_coordinator(args.multicast_group, args.discovery_port)
+        static_coordinator = None
 
-        if not coordinator:
-            raise SystemExit("No coordinator found. Start at least one server first.")
+    input_queue: queue.Queue = queue.Queue()
+    threading.Thread(target=input_reader, args=(input_queue,), daemon=True).start()
 
-        print(
-            f"Coordinator discovered: server {coordinator['server_id']} "
-            f"at {coordinator['host']}:{coordinator['client_port']}"
-        )
+    coordinator = static_coordinator or discover_coordinator(args.multicast_group, args.discovery_port)
+    if not coordinator:
+        raise SystemExit("No coordinator found. Start at least one server first.")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    is_rejoin = False
+    last_sequence: Dict = {"seq": 0}
 
-    try:
-        sock.connect((coordinator["host"], int(coordinator["client_port"])))
+    while True:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.connect((coordinator["host"], int(coordinator["client_port"])))
 
-        send_json_tcp(sock, make_message(
-            JOIN_REQUEST,
-            client_id=args.client_id or new_id("client"),
-            username=args.username,
-            room=args.room,
-        ))
+            send_json_tcp(sock, make_message(
+                JOIN_REQUEST,
+                client_id=client_id,
+                username=username,
+                room=room,
+            ))
 
-        threading.Thread(target=receive_loop, args=(sock,), daemon=True).start()
+            reconnect_event = threading.Event()
+            redirect_holder: Dict = {}
 
-        while True:
-            text = input()
+            threading.Thread(
+                target=receive_loop,
+                args=(sock, reconnect_event, redirect_holder, is_rejoin, last_sequence),
+                daemon=True,
+            ).start()
 
-            if text.strip().lower() in {"/quit", "/exit"}:
-                send_json_tcp(sock, make_message(LEAVE))
-                break
+            is_rejoin = True
 
-            send_json_tcp(sock, make_message(CHAT_MESSAGE, text=text))
+            while not reconnect_event.is_set():
+                try:
+                    text = input_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
 
-    except ConnectionRefusedError:
-        print("Connection refused. Der Server läuft nicht oder der Port ist falsch.")
+                if text is None:
+                    try:
+                        send_json_tcp(sock, make_message(LEAVE))
+                    except Exception:
+                        pass
+                    return
 
-    except TimeoutError:
-        print("Connection timeout. IP, VPN oder Firewall prüfen.")
+                if text.strip().lower() in {"/quit", "/exit"}:
+                    try:
+                        send_json_tcp(sock, make_message(LEAVE))
+                    except Exception:
+                        pass
+                    return
 
-    except OSError as exc:
-        print(f"Connection error: {exc}")
+                try:
+                    send_json_tcp(sock, make_message(CHAT_MESSAGE, text=text))
+                except Exception:
+                    input_queue.put(text)
+                    reconnect_event.set()
 
-    finally:
-        sock.close()
+        except (ConnectionRefusedError, TimeoutError, OSError):
+            pass
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+        time.sleep(RECONNECT_DELAY)
+
+        next_coordinator = redirect_holder.get("coordinator")
+        if next_coordinator:
+            coordinator = next_coordinator
+        elif static_coordinator:
+            coordinator = static_coordinator
+        else:
+            found = discover_coordinator(args.multicast_group, args.discovery_port)
+            if found:
+                coordinator = found
 
 
 if __name__ == "__main__":

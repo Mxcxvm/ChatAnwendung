@@ -1,4 +1,5 @@
 import argparse
+import ipaddress
 import socket
 import struct
 import threading
@@ -251,6 +252,7 @@ class ChatServer:
 
     def register_client(self, client_id: str, username: str, room: str, conn: socket.socket, address: Tuple[str, int]) -> None:
         with self.lock:
+            is_rejoin = client_id in self.clients
             self.clients[client_id] = {
                 "client_id": client_id,
                 "username": username,
@@ -271,9 +273,10 @@ class ChatServer:
             recent_messages=history,
             coordinator=self.server_info("coordinator"),
         ))
-        self.log(f"registered client {username} in room {room}")
+        self.log(f"{'re' if is_rejoin else ''}registered client {username} in room {room}")
         self.sync_state_to_all_backups()
-        self.order_and_distribute_system_message(room, f"{username} joined the room")
+        if not is_rejoin:
+            self.order_and_distribute_system_message(room, f"{username} joined the room")
 
     def unregister_client(self, client_id: str) -> None:
         with self.lock:
@@ -419,21 +422,34 @@ class ChatServer:
             self.start_election()
 
 
+def derive_server_id(host: str, server_port: int) -> int:
+    return int(ipaddress.ip_address(socket.gethostbyname(host))) * 100000 + server_port
+
+
+def find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Distributed chat server with multicast discovery and Bully election")
-    parser.add_argument("--id", type=int, required=True, help="Unique totally ordered server ID")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--client-port", type=int, required=True)
-    parser.add_argument("--server-port", type=int, required=True)
+    parser.add_argument("--client-port", type=int, default=None)
+    parser.add_argument("--server-port", type=int, default=None)
     parser.add_argument("--multicast-group", default=MULTICAST_GROUP)
     parser.add_argument("--discovery-port", type=int, default=DISCOVERY_PORT)
     args = parser.parse_args()
 
+    client_port = args.client_port or find_free_port()
+    server_port = args.server_port or find_free_port()
+    server_id = derive_server_id(args.host, server_port)
+
     ChatServer(
-        server_id=args.id,
+        server_id=server_id,
         host=args.host,
-        client_port=args.client_port,
-        server_port=args.server_port,
+        client_port=client_port,
+        server_port=server_port,
         multicast_group=args.multicast_group,
         discovery_port=args.discovery_port,
     ).start()
