@@ -32,6 +32,31 @@ BROADCAST_ADDRESS = "255.255.255.255"
 # Fester Port (eine Art "Tuernummer"), auf dem die Server auf Suchanfragen hoeren.
 DISCOVERY_PORT = 5973
 
+RECONNECT_DELAY = 2.0
+DISCOVERY_TIMEOUT = 2.0
+CONNECT_TIMEOUT = 5.0
+
+RECV_TIMEOUT = 0.5
+SERVER_SILENCE_TIMEOUT = 5.0
+
+
+def valid_coordinator(coordinator: Optional[Dict[str, Any]]) -> bool:
+    if not coordinator:
+        return False
+
+    try:
+        host = coordinator["host"]
+        port = int(coordinator["client_port"])
+
+        if not host or port <= 0:
+            return False
+
+        socket.gethostbyname(host)
+        return True
+
+    except Exception:
+        return False
+
 
 def local_ip() -> Optional[str]:
     """Findet die eigene IP-Adresse im lokalen Netzwerk heraus.
@@ -89,6 +114,9 @@ def discover_coordinator(
     sock.settimeout(timeout)           # Nicht ewig warten, sondern hoechstens 'timeout'.
 
     try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.settimeout(timeout)
+
         request = make_message(DISCOVERY_REQUEST, client_probe=True)
         # An alle Ziel-Broadcastadressen senden.
         for target in broadcast_targets(broadcast_address):
@@ -119,7 +147,17 @@ def discover_coordinator(
             except socket.timeout:
                 break                  # Niemand hat (mehr) geantwortet.
 
-        return best
+        if not candidates:
+            return None
+
+        def sort_key(coord: Dict[str, Any]) -> int:
+            try:
+                return int(coord.get("server_id", 0))
+            except Exception:
+                return 0
+
+        candidates.sort(key=sort_key, reverse=True)
+        return candidates[0]
 
     finally:
         sock.close()                   # Socket immer schliessen, egal was passiert.

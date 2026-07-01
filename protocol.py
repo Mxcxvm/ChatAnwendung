@@ -121,10 +121,12 @@ def read_json_lines(sock):
          komplett. Wir schneiden sie ab, wandeln sie zurueck und geben sie aus.
     """
     buffer = b""
+
     while True:
         chunk = sock.recv(4096)          # Bis zu 4096 Bytes aus dem Netzwerk holen.
         if not chunk:                    # Leer = Gegenseite hat die Verbindung beendet.
             return
+
         buffer += chunk
         # Es koennen mehrere Nachrichten auf einmal angekommen sein -> alle abarbeiten.
         while b"\n" in buffer:
