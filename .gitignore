@@ -1,0 +1,13 @@
+# Python-Artefakte (kompilierter Bytecode) - gehoeren nicht ins Repo
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+
+# IDE-/Editor-Dateien
+.vscode/
+.idea/
