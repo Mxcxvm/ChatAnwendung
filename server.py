@@ -228,7 +228,6 @@ class ChatServer:
                     # Direkt an den Absender (den Client) zuruecksenden.
                     response = make_message(
                         DISCOVERY_RESPONSE,
-                        responding_server=self.server_info(),
                         coordinator=self.coordinator_info(),
                     )
                     sock.sendto(encode(response), address)
@@ -258,9 +257,7 @@ class ChatServer:
                 payload = message.get("payload", {})
                 msg_type = message.get("type")
 
-                if msg_type == SERVER_ANNOUNCE:
-                    self.handle_server_announce(payload)
-                elif msg_type == HEARTBEAT:
+                if msg_type == HEARTBEAT:
                     self.handle_heartbeat(payload)          # "Coordinator lebt noch."
                 elif msg_type == STATE_SYNC:
                     self.handle_state_sync(payload)         # Frische Datenkopie erhalten.
@@ -318,15 +315,15 @@ class ChatServer:
         self.announce_coordinator()
 
     def announce_coordinator(self) -> None:
-        """Teilt allen mit: 'Ich bin jetzt der Coordinator.' - sowohl gezielt an
-        jeden bekannten Server (zuverlaessiger) als auch per Multicast (breit)."""
+        """Teilt allen bekannten Servern gezielt per Unicast mit: 'Ich bin jetzt
+        der Coordinator.' Unicast ist hier richtig, weil die Empfaenger (die
+        Backups) bereits bekannt sind - das ist zuverlaessiger als Multicast."""
         msg = make_message(COORDINATOR_ANNOUNCE, coordinator=self.server_info("coordinator"))
         with self.lock:
             targets = list(self.servers.values())
         for server in targets:
             if int(server["server_id"]) != self.server_id:
                 self.send_udp_to_server(server, msg)
-        self.multicast(msg)
 
     def handle_coordinator_announce(self, payload: Dict) -> None:
         """Reagiert auf die Ankuendigung eines (neuen) Coordinators."""
@@ -378,7 +375,7 @@ class ChatServer:
                 # Nur der Coordinator darf Clients bedienen. Sind wir 'nur' ein
                 # Backup, schicken wir den Client weiter (REDIRECT) und trennen.
                 if self.role != "coordinator":
-                    send_json_tcp(conn, make_message(REDIRECT, coordinator=self.coordinator_info()))
+                    send_json_tcp(conn, make_message(REDIRECT))
                     conn.close()
                     return
 
@@ -415,6 +412,10 @@ class ChatServer:
         """Meldet einen Client an: in die Listen eintragen, Beitritt bestaetigen
         (inkl. Teilnehmer und letzter Nachrichten) und die anderen informieren."""
         with self.lock:
+            # Ist die client_id bereits bekannt, handelt es sich um einen
+            # Reconnect (der neue Coordinator kennt den Client aus dem State-Sync).
+            # Dann KEINE erneute "joined"-Meldung ausgeben.
+            is_reconnect = client_id in self.clients
             self.clients[client_id] = {
                 "client_id": client_id,
                 "username": username,
@@ -435,12 +436,12 @@ class ChatServer:
             room=room,
             participants=participants,
             recent_messages=history,
-            coordinator=self.server_info("coordinator"),
         ))
         self.log(f"registered client {username} in room {room}")
         self.sync_state_to_all_backups()                         # Backups aktualisieren.
-        # Allen im Raum mitteilen, dass jemand beigetreten ist.
-        self.order_and_distribute_system_message(room, f"{username} joined the room")
+        # Nur bei echtem Erstbeitritt allen im Raum Bescheid geben.
+        if not is_reconnect:
+            self.order_and_distribute_system_message(room, f"{username} joined the room")
 
     def unregister_client(self, client_id: str) -> None:
         """Meldet einen Client wieder ab (Verbindung beendet/verlassen)."""
@@ -678,7 +679,7 @@ class ChatServer:
         candidate = payload.get("candidate", {})
         candidate_id = int(candidate.get("server_id", -1))
         if candidate_id < self.server_id:
-            sock.sendto(encode(make_message(ELECTION_OK, responder=self.server_info())), address)
+            sock.sendto(encode(make_message(ELECTION_OK)), address)
             self.start_election()
 
 

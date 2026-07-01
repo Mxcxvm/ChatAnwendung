@@ -89,7 +89,7 @@ def discover_coordinator(
     sock.settimeout(timeout)           # Nicht ewig warten, sondern hoechstens 'timeout'.
 
     try:
-        request = make_message(DISCOVERY_REQUEST, client_probe=True)
+        request = make_message(DISCOVERY_REQUEST)
         # An alle Ziel-Broadcastadressen senden.
         for target in broadcast_targets(broadcast_address):
             try:

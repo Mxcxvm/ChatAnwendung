@@ -12,7 +12,6 @@
 import json      # Wandelt Python-Objekte (Dictionaries) in Text um und zurueck.
 import time      # Fuer Zeitstempel (aktuelle Uhrzeit).
 import uuid      # Erzeugt zufaellige, eindeutige Kennungen (IDs).
-from dataclasses import dataclass, asdict
 from typing import Any, Dict
 
 # Texte werden als "UTF-8" kodiert - ein Standard, der alle Sonderzeichen kann.
@@ -34,7 +33,6 @@ DISCOVERY_REQUEST = "DISCOVERY_REQUEST"      # Client fragt per Broadcast: "Wo i
 DISCOVERY_RESPONSE = "DISCOVERY_RESPONSE"    # Server antwortet: "Hier ist der Coordinator."
 JOIN_REQUEST = "JOIN_REQUEST"                # Client moechte einem Chatraum beitreten.
 JOIN_ACCEPTED = "JOIN_ACCEPTED"              # Server bestaetigt den Beitritt.
-JOIN_REJECTED = "JOIN_REJECTED"             # Server lehnt den Beitritt ab.
 CHAT_MESSAGE = "CHAT_MESSAGE"                # Eine vom Client getippte Chat-Nachricht.
 ORDERED_MESSAGE = "ORDERED_MESSAGE"          # Eine vom Coordinator nummerierte/sortierte Nachricht.
 LEAVE = "LEAVE"                              # Client verlaesst den Chat.
