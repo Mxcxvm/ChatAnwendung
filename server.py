@@ -1,40 +1,40 @@
 # =============================================================================
 # server.py
 # -----------------------------------------------------------------------------
-# Der Chat-Server. Man startet mehrere davon (verteiltes System).
+# Der Chat-Server. Man startet mehrere davon.
 #
 # Grundidee:
 #   - Es laufen mehrere gleichberechtigte Server.
 #   - Genau EINER ist der "Coordinator" (der Chef): Nur er nimmt Clients an,
 #     bringt Nachrichten in eine Reihenfolge und verteilt sie.
 #   - Die anderen sind "Backups" (Reserve): Sie halten eine Kopie aller Daten
-#     bereit, falls der Coordinator ausfaellt.
-#   - Faellt der Coordinator aus, waehlen die Backups untereinander einen neuen.
-#     Dafuer wird der "Bully-Algorithmus" benutzt: Wer die HOECHSTE ID hat, wird
+#     bereit, falls der Coordinator ausfällt.
+#   - Fällt der Coordinator aus, wählen die Backups untereinander einen neuen.
+#     Dafür wird der "Bully-Algorithmus" benutzt: Wer die HÖCHSTE ID hat, wird
 #     Coordinator.
 #
 # Wichtige Bausteine in dieser Datei:
 #   - Discovery: Clients finden den Coordinator per Broadcast.
-#   - Heartbeat: Der Coordinator sendet regelmaessig "ich lebe noch".
+#   - Heartbeat: Der Coordinator sendet regelmässig "ich lebe noch".
 #   - Wahl (Election): Auswahl eines neuen Coordinators bei Ausfall.
 #   - State-Sync: Der Coordinator spiegelt seinen Datenstand zu den Backups.
 # =============================================================================
 
-import argparse     # Kommandozeilen-Argumente einlesen.
-import random       # Zufallszahlen (fuer die zufaellige Server-ID).
-import socket       # Netzwerk-Kommunikation.
-import struct       # Bytes fein zusammenbauen (fuer eine Multicast-Einstellung).
-import threading    # Mehrere Aufgaben parallel (Empfangen, Heartbeat, Wahl ...).
-import time         # Zeit messen und Pausen.
+import argparse     
+import random      
+import socket     
+import struct     
+import threading  
+import time         
 from typing import Dict, Tuple, Optional
 
-from protocol import *   # Gemeinsame "Sprache" (Nachrichten-Typen, Hilfsfunktionen).
+from protocol import *   
 
-# Eine Multicast-Gruppe ist eine spezielle Adresse, ueber die sich die Server
-# untereinander finden/ansprechen. (Clients nutzen stattdessen Broadcast.)
+# Eine Multicast-Gruppe ist eine spezielle Adresse, über die sich die Server
+# untereinander finden/ansprechen. 
 MULTICAST_GROUP = "224.1.1.1"
 
-# Fester Port, auf dem Suchanfragen und Server-Ankuendigungen ankommen.
+# Fester Port, auf dem Suchanfragen und Server-Ankündigungen ankommen.
 DISCOVERY_PORT = 5973
 
 # Alle wie viele Sekunden der Coordinator ein "ich lebe noch" (Heartbeat) sendet.
@@ -44,19 +44,19 @@ HEARTBEAT_INTERVAL = 1.0
 def detect_lan_ip() -> str:
     """Ermittelt die eigene LAN-IP (die Adresse, unter der ein Client uns
     erreichen kann). Trick wie beim Client: Wir 'verbinden' ein UDP-Socket zu
-    einer externen Adresse - es wird nichts gesendet, das Betriebssystem waehlt
-    nur die passende Netzwerkkarte und verraet uns dabei unsere IP."""
+    einer externen Adresse - es wird nichts gesendet, das Betriebssystem wählt
+    nur die passende Netzwerkkarte und verrät uns dabei unsere IP."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect(("8.8.8.8", 80))
         return sock.getsockname()[0]
     except OSError:
-        return "127.0.0.1"     # Notfall: 'localhost' (nur dieses Geraet).
+        return "127.0.0.1"     # Notfall: 'localhost' (nur dieses Gerät).
     finally:
         sock.close()
 
 
-# Faellt vom Coordinator so lange kein Heartbeat, gilt er als tot (in Sekunden).
+# Fällt vom Coordinator so lange kein Heartbeat, gilt er als tot (in Sekunden).
 HEARTBEAT_TIMEOUT = 3.2
 
 # Alle wie viele Sekunden der Coordinator seinen kompletten Datenstand spiegelt.
@@ -68,11 +68,11 @@ class ChatServer:
 
     def __init__(self, server_id: int, host: str, client_port: int, server_port: int,
                  multicast_group: str = MULTICAST_GROUP, discovery_port: int = DISCOVERY_PORT):
-        # --- Identitaet und Netzwerk-Einstellungen ---
-        self.server_id = server_id           # Eindeutige ID. Hoechste ID gewinnt die Wahl.
+        # --- Identität und Netzwerk-Einstellungen ---
+        self.server_id = server_id           # Eindeutige ID. Höchste ID gewinnt die Wahl.
         self.host = host                     # Eigene Adresse, die wir Clients mitteilen.
-        self.client_port = client_port       # TCP-Port fuer Clients (0 = OS waehlt frei).
-        self.server_port = server_port       # UDP-Port fuer Server-zu-Server (0 = OS waehlt frei).
+        self.client_port = client_port       # TCP-Port für Clients (0 = OS wählt frei).
+        self.server_port = server_port       # UDP-Port für Server-zu-Server (0 = OS wählt frei).
         self.multicast_group = multicast_group
         self.discovery_port = discovery_port
 
@@ -88,7 +88,7 @@ class ChatServer:
         self.clients: Dict[str, Dict] = {}   # Angemeldete Clients (client_id -> Infos).
         self.rooms: Dict[str, set] = {}      # Welche Clients sind in welchem Raum.
         self.message_history = []            # Alle bisherigen (geordneten) Nachrichten.
-        self.global_sequence = 0             # Fortlaufende Nummer fuer die Reihenfolge.
+        self.global_sequence = 0             # Fortlaufende Nummer für die Reihenfolge.
         # Offene Netzwerkverbindungen zu den Clients (client_id -> Verbindung).
         self.client_connections: Dict[str, socket.socket] = {}
         # Dedup-Tabelle: vom Client vergebene msg_id -> bereits geordnete Nachricht.
@@ -96,29 +96,29 @@ class ChatServer:
         self.seen_msg_ids: Dict[str, Dict] = {}
 
         # --- Technische Helfer ---
-        # RLock: Schloss gegen gleichzeitiges Aendern durch mehrere Threads.
+        # RLock: Schloss gegen gleichzeitiges Ändern durch mehrere Threads.
         self.lock = threading.RLock()
-        self.running = True                  # Laeuft der Server noch?
+        self.running = True                  # Läuft der Server noch?
         self.last_heartbeat = time.time()    # Wann kam zuletzt ein Lebenszeichen?
-        self.election_in_progress = False    # Laeuft gerade eine Wahl?
+        self.election_in_progress = False    # Läuft gerade eine Wahl?
 
-        # Diese Sockets werden in bind_sockets() erzeugt (Port 0 = vom OS frei gewaehlt).
+        # Diese Sockets werden in bind_sockets() erzeugt (Port 0 = vom OS frei gewählt).
         self.client_sock: Optional[socket.socket] = None
         self.server_sock: Optional[socket.socket] = None
 
     def bind_sockets(self) -> None:
         """Erstellt und 'bindet' die beiden Haupt-Sockets (reserviert die Ports).
 
-        Wichtig: Wir machen das, BEVOR wir uns im Netzwerk ankuendigen. Bei Port 0
+        Wichtig: Wir machen das, BEVOR wir uns im Netzwerk ankündigen. Bei Port 0
         sucht das Betriebssystem selbst einen freien Port aus; wir lesen den
-        tatsaechlich vergebenen Port anschliessend aus, damit wir Clients und
-        anderen Servern die richtige Portnummer nennen koennen."""
-        # Client-Socket: TCP (stabile Verbindungen fuer Clients).
+        tatsächlich vergebenen Port anschliessend aus, damit wir Clients und
+        anderen Servern die richtige Portnummer nennen können."""
+        # Client-Socket: TCP (stabile Verbindungen für Clients).
         cs = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         cs.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         cs.bind(("0.0.0.0", self.client_port))   # "0.0.0.0" = auf allen Netzwerkkarten lauschen.
         cs.listen(50)                            # Bis zu 50 wartende Verbindungen zulassen.
-        self.client_port = cs.getsockname()[1]   # Tatsaechlich vergebenen Port merken.
+        self.client_port = cs.getsockname()[1]   # Tatsächlich vergebenen Port merken.
         self.client_sock = cs
 
         # Server-Socket: UDP (kurze Nachrichten zwischen den Servern).
@@ -144,7 +144,7 @@ class ChatServer:
         }
 
     def coordinator_info(self) -> Optional[Dict]:
-        """Gibt die Infos zum aktuellen Coordinator zurueck. Sind wir selbst der
+        """Gibt die Infos zum aktuellen Coordinator zurück. Sind wir selbst der
         Coordinator, ist es unsere eigene Visitenkarte; sonst die des bekannten
         Coordinators (oder None, falls noch keiner feststeht)."""
         if self.role == "coordinator":
@@ -153,15 +153,15 @@ class ChatServer:
 
     def log(self, text: str) -> None:
         """Gibt eine Statuszeile aus, mit Server-ID und Rolle davor.
-        'flush=True' sorgt dafuer, dass die Ausgabe sofort sichtbar wird."""
+        'flush=True' sorgt dafür, dass die Ausgabe sofort sichtbar wird."""
         print(f"[server {self.server_id} | {self.role}] {text}", flush=True)
 
     def start(self) -> None:
         """Startet den Server: Sockets binden, alle Hintergrund-Aufgaben (Threads)
-        starten, sich ankuendigen und die erste Rolle (Coordinator/Backup) klaeren."""
+        starten, sich ankündigen und die erste Rolle (Coordinator/Backup) klären."""
         self.bind_sockets()
 
-        # Jede dieser Aufgaben laeuft parallel in einem eigenen Thread:
+        # Jede dieser Aufgaben läuft parallel in einem eigenen Thread:
         threading.Thread(target=self.discovery_listener, daemon=True).start()    # Suchanfragen beantworten.
         threading.Thread(target=self.server_listener, daemon=True).start()       # Server-Nachrichten empfangen.
         threading.Thread(target=self.client_listener, daemon=True).start()       # Client-Verbindungen annehmen.
@@ -184,13 +184,13 @@ class ChatServer:
             self.log("shutdown requested")
 
     # ------------------------------------------------------------------ #
-    #  Multicast (Server finden sich gegenseitig / Coordinator-Ankuendigung)
+    #  Multicast (Server finden sich gegenseitig / Coordinator-Ankündigung)
     # ------------------------------------------------------------------ #
 
     def create_multicast_socket(self) -> socket.socket:
         """Erstellt ein Socket, das an der Multicast-Gruppe 'teilnimmt', also
-        Nachrichten empfaengt, die an die Gruppenadresse gehen. Dieses Socket
-        empfaengt zugleich auch die Broadcasts der Clients (gleicher Port)."""
+        Nachrichten empfängt, die an die Gruppenadresse gehen. Dieses Socket
+        empfängt zugleich auch die Broadcasts der Clients (gleicher Port)."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -211,7 +211,7 @@ class ChatServer:
         sock.close()
 
     def discovery_listener(self) -> None:
-        """Laeuft dauerhaft und beantwortet Suchanfragen.
+        """Läuft dauerhaft und beantwortet Suchanfragen.
 
         - DISCOVERY_REQUEST (von einem Client): Wir antworten mit Infos zum
           aktuellen Coordinator, damit der Client sich verbinden kann.
@@ -225,7 +225,7 @@ class ChatServer:
                 payload = message.get("payload", {})
 
                 if msg_type == DISCOVERY_REQUEST:
-                    # Direkt an den Absender (den Client) zuruecksenden.
+                    # Direkt an den Absender (den Client) zurücksenden.
                     response = make_message(
                         DISCOVERY_RESPONSE,
                         coordinator=self.coordinator_info(),
@@ -239,7 +239,7 @@ class ChatServer:
                 self.log(f"discovery listener error: {exc}")
 
     def announce_server(self) -> None:
-        """Kuendigt diesen Server bei allen anderen an ('Hallo, es gibt mich')."""
+        """Kündigt diesen Server bei allen anderen an ('Hallo, es gibt mich')."""
         self.multicast(make_message(SERVER_ANNOUNCE, server=self.server_info()))
 
     # ------------------------------------------------------------------ #
@@ -247,7 +247,7 @@ class ChatServer:
     # ------------------------------------------------------------------ #
 
     def server_listener(self) -> None:
-        """Empfaengt alle Nachrichten von anderen Servern und reicht sie je nach
+        """Empfängt alle Nachrichten von anderen Servern und reicht sie je nach
         Typ an die passende Funktion weiter."""
         sock = self.server_sock
         while self.running:
@@ -264,7 +264,7 @@ class ChatServer:
                 elif msg_type == ELECTION:
                     self.handle_election(payload, address, sock)   # Jemand will Coordinator werden.
                 elif msg_type == ELECTION_OK:
-                    # Ein hoeherer Server hat geantwortet -> wir gewinnen die Wahl nicht.
+                    # Ein höherer Server hat geantwortet -> wir gewinnen die Wahl nicht.
                     self.election_in_progress = False
                 elif msg_type == COORDINATOR_ANNOUNCE:
                     self.handle_coordinator_announce(payload)  # Neuer Coordinator steht fest.
@@ -285,7 +285,7 @@ class ChatServer:
         if not server:
             return
         sid = int(server["server_id"])
-        if sid == self.server_id:        # Unsere eigene Ankuendigung ignorieren.
+        if sid == self.server_id:        # Unsere eigene Ankündigung ignorieren.
             return
         with self.lock:
             self.servers[sid] = server
@@ -294,7 +294,7 @@ class ChatServer:
             self.send_state_sync(server)
 
     def decide_initial_coordinator(self) -> None:
-        """Bestimmt nach dem Start die erste Rolle: Haben wir die hoechste ID
+        """Bestimmt nach dem Start die erste Rolle: Haben wir die höchste ID
         unter den bekannten Servern, werden wir Coordinator. Sonst starten wir
         (falls noch kein Coordinator bekannt ist) eine Wahl."""
         with self.lock:
@@ -316,8 +316,8 @@ class ChatServer:
 
     def announce_coordinator(self) -> None:
         """Teilt allen bekannten Servern gezielt per Unicast mit: 'Ich bin jetzt
-        der Coordinator.' Unicast ist hier richtig, weil die Empfaenger (die
-        Backups) bereits bekannt sind - das ist zuverlaessiger als Multicast."""
+        der Coordinator.' Unicast ist hier richtig, weil die Empfänger (die
+        Backups) bereits bekannt sind - das ist zuverlässiger als Multicast."""
         msg = make_message(COORDINATOR_ANNOUNCE, coordinator=self.server_info("coordinator"))
         with self.lock:
             targets = list(self.servers.values())
@@ -326,22 +326,22 @@ class ChatServer:
                 self.send_udp_to_server(server, msg)
 
     def handle_coordinator_announce(self, payload: Dict) -> None:
-        """Reagiert auf die Ankuendigung eines (neuen) Coordinators."""
+        """Reagiert auf die Ankündigung eines (neuen) Coordinators."""
         coord = payload.get("coordinator")
         if not coord:
             return
         coord_id = int(coord["server_id"])
 
         # Bully-Regel: Ein Server mit NIEDRIGERER ID darf nicht unser Coordinator
-        # werden. Statt uns unterzuordnen, setzen wir unsere eigene (hoehere)
+        # werden. Statt uns unterzuordnen, setzen wir unsere eigene (höhere)
         # Kandidatur durch, indem wir selbst eine Wahl starten. Das verhindert,
-        # dass sich zwei Server gegenseitig als Coordinator ueberschreiben.
+        # dass sich zwei Server gegenseitig als Coordinator überschreiben.
         if coord_id < self.server_id:
             self.log(f"rejected coordinator {coord_id} (lower id) - asserting own candidacy")
             self.start_election()
             return
 
-        # Der neue Coordinator hat eine hoehere (oder unsere) ID -> akzeptieren.
+        # Der neue Coordinator hat eine höhere (oder unsere) ID -> akzeptieren.
         with self.lock:
             self.servers[coord_id] = coord
             if coord_id != self.server_id:
@@ -357,7 +357,7 @@ class ChatServer:
     # ------------------------------------------------------------------ #
 
     def client_listener(self) -> None:
-        """Nimmt neue Client-Verbindungen an. Fuer jede Verbindung wird ein
+        """Nimmt neue Client-Verbindungen an. Für jede Verbindung wird ein
         eigener Thread gestartet, damit mehrere Clients parallel bedient werden."""
         sock = self.client_sock
         while self.running:
@@ -365,7 +365,7 @@ class ChatServer:
             threading.Thread(target=self.handle_client_connection, args=(conn, address), daemon=True).start()
 
     def handle_client_connection(self, conn: socket.socket, address: Tuple[str, int]) -> None:
-        """Bedient einen einzelnen verbundenen Client, solange die Verbindung haelt."""
+        """Bedient einen einzelnen verbundenen Client, solange die Verbindung hält."""
         client_id = None
         try:
             for message in read_json_lines(conn):
@@ -380,7 +380,7 @@ class ChatServer:
                     return
 
                 if msg_type == JOIN_REQUEST:
-                    # Client moechte beitreten.
+                    # Client möchte beitreten.
                     client_id = payload.get("client_id") or new_id("client")
                     username = payload.get("username", client_id)
                     room = payload.get("room", "general")
@@ -400,7 +400,7 @@ class ChatServer:
         except Exception as exc:
             self.log(f"client connection error: {exc}")
         finally:
-            # Aufraeumen: Client abmelden und Verbindung schliessen.
+            # Aufräumen: Client abmelden und Verbindung schliessen.
             if client_id:
                 self.unregister_client(client_id)
             try:
@@ -409,7 +409,7 @@ class ChatServer:
                 pass
 
     def register_client(self, client_id: str, username: str, room: str, conn: socket.socket, address: Tuple[str, int]) -> None:
-        """Meldet einen Client an: in die Listen eintragen, Beitritt bestaetigen
+        """Meldet einen Client an: in die Listen eintragen, Beitritt bestätigen
         (inkl. Teilnehmer und letzter Nachrichten) und die anderen informieren."""
         with self.lock:
             # Ist die client_id bereits bekannt, handelt es sich um einen
@@ -426,10 +426,10 @@ class ChatServer:
             self.rooms.setdefault(room, set()).add(client_id)   # Raum anlegen/erweitern.
             self.client_connections[client_id] = conn
             participants = [self.clients[c]["username"] for c in self.rooms[room]]
-            # Die letzten 20 Nachrichten dieses Raums fuer den Neuankoemmling.
+            # Die letzten 20 Nachrichten dieses Raums für den Neuankömmling.
             history = [m for m in self.message_history if m["room"] == room][-20:]
 
-        # Beitritt bestaetigen.
+        # Beitritt bestätigen.
         send_json_tcp(conn, make_message(
             JOIN_ACCEPTED,
             client_id=client_id,
@@ -463,7 +463,7 @@ class ChatServer:
 
     def order_and_distribute_system_message(self, room: str, text: str) -> None:
         """Erzeugt eine System-Nachricht (z.B. 'X joined the room'). Absender ist
-        'system'. System-Nachrichten haben keine msg_id (kein Dedup noetig)."""
+        'system'. System-Nachrichten haben keine msg_id (kein Dedup nötig)."""
         self._append_and_distribute(room, "system", "system", text)
 
     def order_and_distribute_message(self, client_id: str, text: str, msg_id: Optional[str] = None) -> None:
@@ -471,9 +471,9 @@ class ChatServer:
 
         Dedup (Deduplizierung): Wurde genau diese Nachricht (gleiche msg_id) schon
         einmal geordnet - etwa, weil der Client sie nach einem Failover erneut
-        gesendet hat -, ordnen wir sie NICHT noch einmal ein. Wir bestaetigen dem
+        gesendet hat -, ordnen wir sie NICHT noch einmal ein. Wir bestätigen dem
         Absender nur erneut die bereits vorhandene Nachricht. So gibt es keine
-        Doppel-Eintraege."""
+        Doppel-Einträge."""
         if msg_id:
             with self.lock:
                 existing = self.seen_msg_ids.get(msg_id)
@@ -495,7 +495,7 @@ class ChatServer:
                                text: str, msg_id: Optional[str] = None) -> None:
         """Das Herz der Nachrichten-Verteilung (nur der Coordinator macht das):
         1. Eine fortlaufende Nummer ('sequence') vergeben -> globale Reihenfolge.
-        2. In die Historie aufnehmen (und ggf. fuer Dedup merken).
+        2. In die Historie aufnehmen (und ggf. für Dedup merken).
         3. An alle Clients im Raum senden.
         4. Die Backups auf den neuen Stand bringen."""
         with self.lock:
@@ -511,7 +511,7 @@ class ChatServer:
             }
             self.message_history.append(ordered)
             if msg_id:
-                self.seen_msg_ids[msg_id] = ordered  # Fuer spaeteres Dedup merken.
+                self.seen_msg_ids[msg_id] = ordered  # Für späteres Dedup merken.
             recipients = list(self.rooms.get(room, set()))
 
         # Die fertige, nummerierte Nachricht an alle im Raum schicken.
@@ -531,7 +531,7 @@ class ChatServer:
 
     def build_state_snapshot(self) -> Dict:
         """Erstellt eine Momentaufnahme ('Snapshot') des gesamten Zustands, den
-        ein Backup braucht, um spaeter uebernehmen zu koennen. Mengen (sets)
+        ein Backup braucht, um später übernehmen zu können. Mengen (sets)
         werden zu Listen, weil sich nur Listen ins Nachrichtenformat (JSON)
         umwandeln lassen."""
         with self.lock:
@@ -545,21 +545,21 @@ class ChatServer:
             }
 
     def handle_state_sync(self, payload: Dict) -> None:
-        """Ein Backup erhaelt vom Coordinator einen Snapshot und uebernimmt ihn
+        """Ein Backup erhält vom Coordinator einen Snapshot und übernimmt ihn
         als seinen eigenen Stand. So ist es jederzeit bereit, einzuspringen."""
         snapshot = payload.get("state")
         if not snapshot:
             return
         with self.lock:
             self.coordinator = snapshot.get("coordinator")
-            # Schluessel kamen als Text an -> zurueck in Zahlen wandeln.
+            # Schlüssel kamen als Text an -> zurück in Zahlen wandeln.
             self.servers = {int(k): v for k, v in snapshot.get("servers", {}).items()}
             self.clients = snapshot.get("clients", {})
             self.rooms = {room: set(members) for room, members in snapshot.get("rooms", {}).items()}
             self.message_history = snapshot.get("message_history", [])
             self.global_sequence = int(snapshot.get("global_sequence", 0))
             # Dedup-Tabelle aus der mitgelieferten Historie wiederherstellen,
-            # damit ein spaeterer neuer Coordinator erneute Sendungen erkennt.
+            # damit ein späterer neuer Coordinator erneute Sendungen erkennt.
             self.seen_msg_ids = {
                 m["msg_id"]: m for m in self.message_history if m.get("msg_id")
             }
@@ -583,7 +583,7 @@ class ChatServer:
     # ------------------------------------------------------------------ #
 
     def heartbeat_loop(self) -> None:
-        """Laeuft dauerhaft. Sind wir der Coordinator, senden wir regelmaessig ein
+        """Läuft dauerhaft. Sind wir der Coordinator, senden wir regelmässig ein
         Lebenszeichen an alle Backups, damit die wissen: 'Chef lebt noch.'"""
         while self.running:
             if self.role == "coordinator":
@@ -595,8 +595,8 @@ class ChatServer:
             time.sleep(HEARTBEAT_INTERVAL)
 
     def handle_heartbeat(self, payload: Dict) -> None:
-        """Ein Backup empfaengt das Lebenszeichen des Coordinators und merkt sich
-        den Zeitpunkt. Bleibt es zu lange aus, wird eine Wahl ausgeloest."""
+        """Ein Backup empfängt das Lebenszeichen des Coordinators und merkt sich
+        den Zeitpunkt. Bleibt es zu lange aus, wird eine Wahl ausgelöst."""
         coord = payload.get("coordinator")
         if not coord:
             return
@@ -604,7 +604,7 @@ class ChatServer:
 
         # Auch hier die Bully-Regel: Ein Lebenszeichen von einer NIEDRIGEREN ID
         # akzeptieren wir nicht als Coordinator, sondern setzen unsere eigene
-        # (hoehere) Kandidatur durch.
+        # (höhere) Kandidatur durch.
         if coord_id < self.server_id:
             self.start_election()
             return
@@ -614,10 +614,10 @@ class ChatServer:
             self.servers[coord_id] = coord
             if coord_id != self.server_id:
                 self.role = "backup"
-            self.last_heartbeat = time.time()    # Uhr zuruecksetzen: Chef lebt.
+            self.last_heartbeat = time.time()    # Uhr zurücksetzen: Chef lebt.
 
     def state_sync_loop(self) -> None:
-        """Laeuft dauerhaft. Als Coordinator spiegeln wir regelmaessig (auch ohne
+        """Läuft dauerhaft. Als Coordinator spiegeln wir regelmässig (auch ohne
         neue Nachrichten) unseren Stand zu den Backups, damit sie aktuell bleiben."""
         while self.running:
             if self.role == "coordinator":
@@ -625,7 +625,7 @@ class ChatServer:
             time.sleep(STATE_SYNC_INTERVAL)
 
     def failure_detector_loop(self) -> None:
-        """Laeuft dauerhaft. Als Backup pruefen wir regelmaessig, ob das letzte
+        """Läuft dauerhaft. Als Backup prüfen wir regelmässig, ob das letzte
         Lebenszeichen des Coordinators zu lange her ist. Wenn ja, gilt er als
         ausgefallen und wir starten eine Wahl."""
         while self.running:
@@ -634,7 +634,7 @@ class ChatServer:
                 if time.time() - self.last_heartbeat > HEARTBEAT_TIMEOUT:
                     self.log("coordinator heartbeat missing. starting election")
                     self.start_election()
-                    self.last_heartbeat = time.time()   # Uhr zuruecksetzen, sonst Dauerwahl.
+                    self.last_heartbeat = time.time()   # Uhr zurücksetzen, sonst Dauerwahl.
 
     # ------------------------------------------------------------------ #
     #  Wahl (Bully-Algorithmus)
@@ -643,20 +643,20 @@ class ChatServer:
     def start_election(self) -> None:
         """Startet eine Wahl nach dem Bully-Prinzip.
 
-        Idee: Wir fragen alle Server mit HOEHERER ID 'lebt ihr noch?'.
-          - Antwortet niemand mit hoeherer ID, sind wir der Hoechste -> wir werden
+        Idee: Wir fragen alle Server mit HÖHERER ID 'lebt ihr noch?'.
+          - Antwortet niemand mit höherer ID, sind wir der Höchste -> wir werden
             Coordinator.
-          - Antwortet ein Hoeherer (mit ELECTION_OK), uebernimmt der die Wahl und
+          - Antwortet ein Höherer (mit ELECTION_OK), übernimmt der die Wahl und
             wir warten ab."""
         with self.lock:
-            if self.election_in_progress:    # Laeuft schon eine Wahl -> nicht doppelt starten.
+            if self.election_in_progress:    # Läuft schon eine Wahl -> nicht doppelt starten.
                 return
             self.election_in_progress = True
             higher = [s for sid, s in self.servers.items() if sid > self.server_id]
         if not higher:
-            self.become_coordinator()        # Niemand Hoeheres da -> wir gewinnen.
+            self.become_coordinator()        # Niemand Höheres da -> wir gewinnen.
             return
-        # An alle Hoeheren eine ELECTION-Nachricht schicken.
+        # An alle Höheren eine ELECTION-Nachricht schicken.
         msg = make_message(ELECTION, candidate=self.server_info())
         for server in higher:
             self.send_udp_to_server(server, msg)
@@ -664,7 +664,7 @@ class ChatServer:
         threading.Thread(target=self.election_timeout, daemon=True).start()
 
     def election_timeout(self) -> None:
-        """Wartet kurz auf Wahl-Antworten. Hat sich bis dahin kein hoeherer Server
+        """Wartet kurz auf Wahl-Antworten. Hat sich bis dahin kein höherer Server
         gemeldet (election_in_progress ist noch True), werden wir Coordinator."""
         time.sleep(2.0)
         with self.lock:
@@ -675,7 +675,7 @@ class ChatServer:
     def handle_election(self, payload: Dict, address: Tuple[str, int], sock: socket.socket) -> None:
         """Wir bekommen eine Wahl-Anfrage von einem anderen Server. Hat dieser
         eine NIEDRIGERE ID als wir, antworten wir mit ELECTION_OK ('stopp, ich
-        bin hoeher') und starten selbst eine Wahl, um Coordinator zu werden."""
+        bin höher') und starten selbst eine Wahl, um Coordinator zu werden."""
         candidate = payload.get("candidate", {})
         candidate_id = int(candidate.get("server_id", -1))
         if candidate_id < self.server_id:
@@ -685,30 +685,30 @@ class ChatServer:
 
 def generate_server_id() -> int:
     """Erzeugt eine eindeutige, vergleichbare Server-ID - ohne dass sich die
-    Server vorher absprechen muessen. Ein Zufallswert aus einem sehr grossen
-    Bereich macht doppelte IDs aeusserst unwahrscheinlich. Die hoechste ID
-    gewinnt spaeter die Wahl."""
+    Server vorher absprechen müssen. Ein Zufallswert aus einem sehr grossen
+    Bereich macht doppelte IDs äusserst unwahrscheinlich. Die höchste ID
+    gewinnt später die Wahl."""
     return random.randint(1, 2_000_000_000)
 
 
 def main() -> None:
     """Einstiegspunkt: liest die Kommandozeilen-Argumente und startet den Server.
     Ohne Angaben werden ID und Ports automatisch bestimmt - man kann also einfach
-    'python server.py' aufrufen (auch mehrfach fuer mehrere Server)."""
+    'python server.py' aufrufen (auch mehrfach für mehrere Server)."""
     parser = argparse.ArgumentParser(description="Distributed chat server with broadcast discovery and Bully election")
     parser.add_argument("--id", type=int, default=None,
-                        help="Server-ID (Default: automatisch zufaellig vergeben)")
+                        help="Server-ID (Default: automatisch zufällig vergeben)")
     parser.add_argument("--host", default=None,
                         help="An Clients gemeldete Adresse (Default: automatisch ermittelte LAN-IP)")
     parser.add_argument("--client-port", type=int, default=0,
-                        help="TCP-Port fuer Clients (Default: 0 = vom OS frei gewaehlt)")
+                        help="TCP-Port für Clients (Default: 0 = vom OS frei gewählt)")
     parser.add_argument("--server-port", type=int, default=0,
-                        help="UDP-Port fuer Server-zu-Server (Default: 0 = vom OS frei gewaehlt)")
+                        help="UDP-Port für Server-zu-Server (Default: 0 = vom OS frei gewählt)")
     parser.add_argument("--multicast-group", default=MULTICAST_GROUP)
     parser.add_argument("--discovery-port", type=int, default=DISCOVERY_PORT)
     args = parser.parse_args()
 
-    # Fehlt eine ID, eine zufaellige erzeugen. Fehlt der Host, die LAN-IP ermitteln.
+    # Fehlt eine ID, eine zufällige erzeugen. Fehlt der Host, die LAN-IP ermitteln.
     server_id = args.id if args.id is not None else generate_server_id()
     host = args.host or detect_lan_ip()
 
@@ -722,6 +722,6 @@ def main() -> None:
     ).start()
 
 
-# main() nur ausfuehren, wenn die Datei direkt gestartet wird (python server.py).
+# main() nur ausführen, wenn die Datei direkt gestartet wird (python server.py).
 if __name__ == "__main__":
     main()

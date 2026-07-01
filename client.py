@@ -1,7 +1,7 @@
 # =============================================================================
 # client.py
 # -----------------------------------------------------------------------------
-# Das Chat-Programm fuer den Benutzer.
+# Das Chat-Programm für den Benutzer.
 #
 # Aufgabe des Clients:
 #   1. Den aktuellen "Coordinator"-Server im lokalen Netzwerk finden (per Broadcast).
@@ -12,7 +12,7 @@
 #
 # Hintergrund: Es laufen mehrere Server. Genau einer davon ist der "Coordinator"
 # (der Chef), die anderen sind "Backups" (Reserve). Nur der Coordinator bedient
-# Clients. Faellt er aus, waehlen die Backups untereinander einen neuen.
+# Clients. Fällt er aus, wählen die Backups untereinander einen neuen.
 # =============================================================================
 
 import argparse                       # Liest Kommandozeilen-Argumente (z.B. --username).
@@ -24,12 +24,12 @@ from typing import Optional, Dict
 
 from protocol import *                # Die gemeinsame "Sprache" (Nachrichten-Typen, Hilfsfunktionen).
 
-# Standardadresse fuer einen "Broadcast": eine Nachricht an ALLE Geraete im
+# Standardadresse für einen "Broadcast": eine Nachricht an ALLE Geräte im
 # lokalen Netzwerk gleichzeitig. So findet der Client den Server, ohne dessen
 # IP-Adresse vorher zu kennen.
 BROADCAST_ADDRESS = "255.255.255.255"
 
-# Fester Port (eine Art "Tuernummer"), auf dem die Server auf Suchanfragen hoeren.
+# Fester Port (eine Art "Türnummer"), auf dem die Server auf Suchanfragen hören.
 DISCOVERY_PORT = 5973
 
 
@@ -37,13 +37,13 @@ def local_ip() -> Optional[str]:
     """Findet die eigene IP-Adresse im lokalen Netzwerk heraus.
 
     Trick: Wir 'verbinden' ein UDP-Socket zu einer beliebigen externen Adresse
-    (8.8.8.8, ein Google-Server). Dabei wird tatsaechlich NICHTS gesendet - das
-    Betriebssystem waehlt nur die Netzwerkkarte aus, ueber die es gehen wuerde,
-    und verraet uns so unsere eigene Adresse in diesem Netz."""
+    (8.8.8.8, ein Google-Server). Dabei wird tatsächlich NICHTS gesendet - das
+    Betriebssystem wählt nur die Netzwerkkarte aus, über die es gehen würde,
+    und verrät uns so unsere eigene Adresse in diesem Netz."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect(("8.8.8.8", 80))
-        return sock.getsockname()[0]   # Unsere eigene IP, die das OS gewaehlt hat.
+        return sock.getsockname()[0]   # Unsere eigene IP, die das OS gewählt hat.
     except OSError:
         return None                    # Keine Netzwerkverbindung -> nichts gefunden.
     finally:
@@ -53,7 +53,7 @@ def local_ip() -> Optional[str]:
 def broadcast_targets(broadcast_address: str) -> list:
     """Liefert die Zieladressen, an die wir die Suchanfrage schicken.
 
-    Wir verschicken an ZWEI Adressen, um zuverlaessiger zu sein:
+    Wir verschicken an ZWEI Adressen, um zuverlässiger zu sein:
       1. den allgemeinen Broadcast (255.255.255.255)
       2. den 'gerichteten' Broadcast des eigenen Netzes, z.B. 192.168.178.255
          (das '.255' am Ende heisst 'alle im Netz 192.168.178.x').
@@ -73,20 +73,20 @@ def discover_coordinator(
     discovery_port: int,
     timeout: float = 2.0
 ) -> Optional[Dict]:
-    """Sucht den aktuellen Coordinator im Netzwerk und gibt dessen Infos zurueck
+    """Sucht den aktuellen Coordinator im Netzwerk und gibt dessen Infos zurück
     (oder None, wenn keiner antwortet).
 
     Ablauf:
       1. Eine 'Suchanfrage' (DISCOVERY_REQUEST) per Broadcast an alle senden.
       2. Auf Antworten warten (maximal 'timeout' Sekunden).
-      3. Die erste Antwort, die einen Coordinator enthaelt, zurueckgeben.
+      3. Die erste Antwort, die einen Coordinator enthält, zurückgeben.
     """
-    # UDP-Socket: fuer kurze, einzelne Datenpakete (verbindungslos) - ideal fuer Suche.
+    # UDP-Socket: für kurze, einzelne Datenpakete (verbindungslos) - ideal für Suche.
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    # Diese Option MUSS gesetzt sein, damit man ueberhaupt Broadcasts senden darf.
+    # Diese Option MUSS gesetzt sein, damit man überhaupt Broadcasts senden darf.
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.settimeout(timeout)           # Nicht ewig warten, sondern hoechstens 'timeout'.
+    sock.settimeout(timeout)           # Nicht ewig warten, sondern höchstens 'timeout'.
 
     try:
         request = make_message(DISCOVERY_REQUEST)
@@ -97,7 +97,7 @@ def discover_coordinator(
             except OSError:
                 pass                   # Klappt eine Adresse nicht, einfach weiter.
 
-        deadline = time.time() + timeout   # Zeitpunkt, ab dem wir aufhoeren zu warten.
+        deadline = time.time() + timeout   # Zeitpunkt, ab dem wir aufhören zu warten.
         best = None
 
         while time.time() < deadline:
@@ -112,7 +112,7 @@ def discover_coordinator(
                 payload = response.get("payload", {})
                 coordinator = payload.get("coordinator")
 
-                if coordinator:        # Antwort enthaelt einen Coordinator -> fertig.
+                if coordinator:        # Antwort enthält einen Coordinator -> fertig.
                     best = coordinator
                     break
 
@@ -128,13 +128,13 @@ def discover_coordinator(
 class ChatClient:
     """Chat-Client mit automatischem Reconnect.
 
-    Die Klasse buendelt den gesamten Zustand des Clients (Verbindung, offene
-    Nachrichten usw.) und die noetigen Funktionen. Kernidee fuer die
+    Die Klasse bündelt den gesamten Zustand des Clients (Verbindung, offene
+    Nachrichten usw.) und die nötigen Funktionen. Kernidee für die
     Ausfallsicherheit:
-      - Ein Hintergrund-Thread (connection_manager) kuemmert sich darum, IMMER
+      - Ein Hintergrund-Thread (connection_manager) kümmert sich darum, IMMER
         mit dem aktuellen Coordinator verbunden zu sein. Bricht die Verbindung,
         sucht er automatisch den neuen Coordinator und verbindet neu.
-      - Eine 'Outbox' merkt sich gesendete, aber noch nicht bestaetigte
+      - Eine 'Outbox' merkt sich gesendete, aber noch nicht bestätigte
         Nachrichten, damit beim Coordinator-Wechsel nichts verloren geht.
     """
 
@@ -145,7 +145,7 @@ class ChatClient:
                  broadcast_address: str, discovery_port: int):
         self.username = username                       # Anzeigename im Chat.
         self.room = room                               # Name des Chatraums.
-        # Eindeutige Kennung dieses Clients. Bleibt ueber Reconnects gleich,
+        # Eindeutige Kennung dieses Clients. Bleibt über Reconnects gleich,
         # damit der Server uns wiedererkennt. Wird automatisch erzeugt, falls keine angegeben.
         self.client_id = client_id or new_id("client")
         self.broadcast_address = broadcast_address
@@ -153,25 +153,25 @@ class ChatClient:
 
         self.sock: Optional[socket.socket] = None      # Aktuelle Verbindung (oder None).
         # Ein 'Lock' verhindert, dass zwei Threads gleichzeitig dieselben Daten
-        # veraendern und sich dabei in die Quere kommen (Datensalat).
+        # verändern und sich dabei in die Quere kommen (Datensalat).
         self.lock = threading.Lock()
         # Ein 'Event' ist ein Schalter: gesetzt = "wir sind verbunden".
         self.connected = threading.Event()
-        self.running = True                            # Laeuft das Programm noch?
+        self.running = True                            # Läuft das Programm noch?
 
-        # Outbox: noch nicht vom Coordinator bestaetigte Nachrichten.
-        # Sie bleiben hier liegen, bis ihr "Echo" (ORDERED_MESSAGE) zurueckkommt,
+        # Outbox: noch nicht vom Coordinator bestätigte Nachrichten.
+        # Sie bleiben hier liegen, bis ihr "Echo" (ORDERED_MESSAGE) zurückkommt,
         # und werden nach jedem (Re-)Connect erneut gesendet -> kein Verlust beim Failover.
-        self.counter = 0                               # Zaehlt unsere Nachrichten durch.
+        self.counter = 0                               # Zählt unsere Nachrichten durch.
         self.outbox: "OrderedDict[str, Dict]" = OrderedDict()
 
     def run(self) -> None:
         """Startet den Client und liest dann Tastatureingaben des Benutzers."""
-        # Verbindungspflege laeuft im Hintergrund (daemon=True: stirbt mit dem Programm).
+        # Verbindungspflege läuft im Hintergrund (daemon=True: stirbt mit dem Programm).
         threading.Thread(target=self.connection_manager, daemon=True).start()
         try:
             while self.running:
-                # input() wartet, bis der Benutzer eine Zeile tippt und Enter drueckt.
+                # input() wartet, bis der Benutzer eine Zeile tippt und Enter drückt.
                 try:
                     text = input()
                 except EOFError:                     
@@ -184,7 +184,7 @@ class ChatClient:
 
                 self.send_chat(text)                   # Normale Chat-Nachricht verschicken.
         finally:
-            # Sauber aufraeumen, wenn die Schleife endet.
+            # Sauber aufräumen, wenn die Schleife endet.
             self.running = False
             self.connected.clear()
             with self.lock:
@@ -195,8 +195,8 @@ class ChatClient:
                         pass
 
     def send(self, message: Dict) -> None:
-        """Sendet eine fertige Nachricht ueber die aktuelle Verbindung.
-        Wird z.B. fuer die LEAVE-Nachricht benutzt. Bei Fehlern geben wir nur
+        """Sendet eine fertige Nachricht über die aktuelle Verbindung.
+        Wird z.B. für die LEAVE-Nachricht benutzt. Bei Fehlern geben wir nur
         einen Hinweis aus - der connection_manager baut die Verbindung ggf. neu auf."""
         with self.lock:
             sock = self.sock
@@ -210,11 +210,11 @@ class ChatClient:
     def send_chat(self, text: str) -> None:
         """Verschickt eine Chat-Nachricht - mit Verlustschutz.
 
-        Wichtig fuer die Ausfallsicherheit: Die Nachricht bekommt eine eigene ID
-        und wandert in die Outbox, BEVOR sie gesendet wird. Schlaegt das Senden
+        Wichtig für die Ausfallsicherheit: Die Nachricht bekommt eine eigene ID
+        und wandert in die Outbox, BEVOR sie gesendet wird. Schlägt das Senden
         fehl oder besteht gerade keine Verbindung, bleibt sie dort liegen und
-        wird nach dem naechsten Reconnect erneut gesendet. Endgueltig 'erledigt'
-        ist sie erst, wenn ihr Echo vom Coordinator zurueckkommt."""
+        wird nach dem nächsten Reconnect erneut gesendet. Endgültig 'erledigt'
+        ist sie erst, wenn ihr Echo vom Coordinator zurückkommt."""
         with self.lock:
             self.counter += 1
             # Eindeutige Nachrichten-ID, z.B. "client-1a2b3c4d:5".
@@ -232,9 +232,9 @@ class ChatClient:
             print("(Senden fehlgeschlagen - Nachricht wird nach Reconnect gesendet)")
 
     def resend_outbox(self, sock: socket.socket) -> None:
-        """Sendet alle noch unbestaetigten Nachrichten aus der Outbox erneut.
+        """Sendet alle noch unbestätigten Nachrichten aus der Outbox erneut.
         Wird direkt nach jedem (Re-)Connect aufgerufen, damit Nachrichten, die
-        waehrend eines Ausfalls 'haengen geblieben' sind, doch noch ankommen."""
+        während eines Ausfalls 'hängen geblieben' sind, doch noch ankommen."""
         with self.lock:
             pending = list(self.outbox.values())       # Kopie der offenen Nachrichten.
         for message in pending:
@@ -244,7 +244,7 @@ class ChatClient:
                 return                                 # Verbindung wieder weg -> abbrechen.
 
     def connection_manager(self) -> None:
-        """Der 'Verbindungs-Manager' - laeuft dauerhaft im Hintergrund.
+        """Der 'Verbindungs-Manager' - läuft dauerhaft im Hintergrund.
 
         Endlosschleife: Coordinator suchen -> verbinden -> beitreten -> offene
         Nachrichten nachsenden -> empfangen, bis die Verbindung abbricht ->
@@ -261,7 +261,7 @@ class ChatClient:
             # 2. Verbinden und dem Chatraum beitreten.
             sock = self.connect_and_join(coordinator)
             if sock is None:                           # Verbindung fehlgeschlagen.
-                time.sleep(self.RECONNECT_DELAY)       # (z.B. weil die Wahl noch laeuft)
+                time.sleep(self.RECONNECT_DELAY)       # (z.B. weil die Wahl noch läuft)
                 continue
 
             # 3. Verbindung als 'aktiv' markieren.
@@ -273,13 +273,13 @@ class ChatClient:
                 f"@ {coordinator['host']}:{coordinator['client_port']}"
             )
 
-            # 4. Alle noch unbestaetigten Nachrichten erneut senden.
+            # 4. Alle noch unbestätigten Nachrichten erneut senden.
             self.resend_outbox(sock)
 
             # 5. Nachrichten empfangen, bis die Verbindung abbricht (blockiert hier).
             self.receive_until_disconnect(sock)
 
-            # 6. Verbindung ist weg -> Status zuruecksetzen.
+            # 6. Verbindung ist weg -> Status zurücksetzen.
             self.connected.clear()
             with self.lock:
                 self.sock = None
@@ -290,11 +290,11 @@ class ChatClient:
 
     def connect_and_join(self, coordinator: Dict) -> Optional[socket.socket]:
         """Baut eine TCP-Verbindung zum Coordinator auf und meldet sich an.
-        Gibt das verbundene Socket zurueck - oder None, wenn es nicht klappt."""
-        # TCP-Socket: fuer eine stabile, dauerhafte Verbindung (anders als UDP).
+        Gibt das verbundene Socket zurück - oder None, wenn es nicht klappt."""
+        # TCP-Socket: für eine stabile, dauerhafte Verbindung (anders als UDP).
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.settimeout(5.0)                       # Hoechstens 5s auf den Verbindungsaufbau warten.
+            sock.settimeout(5.0)                       # Höchstens 5s auf den Verbindungsaufbau warten.
             sock.connect((coordinator["host"], int(coordinator["client_port"])))
             sock.settimeout(None)                      # Danach wieder unbegrenzt (zum Empfangen).
             # Beitrittsanfrage an den Chatraum senden.
@@ -310,16 +310,16 @@ class ChatClient:
             return None
 
     def receive_until_disconnect(self, sock: socket.socket) -> None:
-        """Empfaengt und verarbeitet Nachrichten vom Server, bis die Verbindung
-        endet. Laeuft so lange, wie Daten kommen; bricht die Verbindung ab, kehrt
-        die Funktion zurueck (und der connection_manager verbindet neu)."""
+        """Empfängt und verarbeitet Nachrichten vom Server, bis die Verbindung
+        endet. Läuft so lange, wie Daten kommen; bricht die Verbindung ab, kehrt
+        die Funktion zurück (und der connection_manager verbindet neu)."""
         try:
             for message in read_json_lines(sock):
                 msg_type = message.get("type")
                 payload = message.get("payload", {})
 
                 if msg_type == JOIN_ACCEPTED:
-                    # Beitritt bestaetigt: Raum, Teilnehmer und letzte Nachrichten anzeigen.
+                    # Beitritt bestätigt: Raum, Teilnehmer und letzte Nachrichten anzeigen.
                     print(f"Joined room '{payload['room']}' as {payload['client_id']}")
                     print("Participants:", ", ".join(payload.get("participants", [])))
                     for item in payload.get("recent_messages", []):
@@ -329,7 +329,7 @@ class ChatClient:
                     # Eine vom Coordinator nummerierte Chat-Nachricht.
                     item = payload["message"]
                     # Ist es das Echo einer EIGENEN Nachricht? Dann gilt sie als
-                    # bestaetigt und kann aus der Outbox entfernt werden.
+                    # bestätigt und kann aus der Outbox entfernt werden.
                     mid = item.get("msg_id")
                     if mid:
                         with self.lock:
@@ -370,7 +370,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Client-Objekt mit den gewaehlten Einstellungen erstellen und starten.
+    # Client-Objekt mit den gewählten Einstellungen erstellen und starten.
     ChatClient(
         username=args.username,
         room=args.room,
@@ -380,7 +380,7 @@ def main() -> None:
     ).run()
 
 
-# Diese Zeile sorgt dafuer, dass main() nur laeuft, wenn man die Datei direkt
+# Diese Zeile sorgt dafür, dass main() nur läuft, wenn man die Datei direkt
 # startet (python client.py) - und nicht, wenn sie nur importiert wird.
 if __name__ == "__main__":
     main()
