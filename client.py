@@ -169,6 +169,9 @@ class ChatClient:
         # Reconnect der mitgeschickte Verlauf (recent_messages) erneut ausgegeben
         # wird -> jede Nachricht erscheint genau einmal.
         self.last_seen_seq = 0
+        # Merker, ob wir schon einmal beigetreten sind. Beim Reconnect sollen die
+        # "Joined room ..."- und "Participants:"-Zeilen nicht erneut erscheinen.
+        self.joined_once = False
 
     def run(self) -> None:
         """Startet den Client und liest dann Tastatureingaben des Benutzers."""
@@ -334,9 +337,14 @@ class ChatClient:
                 payload = message.get("payload", {})
 
                 if msg_type == JOIN_ACCEPTED:
-                    # Beitritt bestätigt: Raum, Teilnehmer und letzte Nachrichten anzeigen.
-                    print(f"Joined room '{payload['room']}' as {payload['client_id']}")
-                    print("Participants:", ", ".join(payload.get("participants", [])))
+                    # Begruessung nur beim allerersten Beitritt anzeigen, nicht bei
+                    # jedem Reconnect nach einem Coordinator-Wechsel.
+                    if not self.joined_once:
+                        print(f"Joined room '{payload['room']}' as {payload['client_id']}")
+                        print("Participants:", ", ".join(payload.get("participants", [])))
+                        self.joined_once = True
+                    # Bereits gesehene Verlaufsnachrichten werden von show_message
+                    # anhand der Sequenznummer ohnehin uebersprungen.
                     for item in payload.get("recent_messages", []):
                         self.show_message(item)
 
