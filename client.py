@@ -165,6 +165,11 @@ class ChatClient:
         self.counter = 0                               # Zählt unsere Nachrichten durch.
         self.outbox: "OrderedDict[str, Dict]" = OrderedDict()
 
+        # Höchste bereits angezeigte Sequenznummer. Verhindert, dass nach einem
+        # Reconnect der mitgeschickte Verlauf (recent_messages) erneut ausgegeben
+        # wird -> jede Nachricht erscheint genau einmal.
+        self.last_seen_seq = 0
+
     def run(self) -> None:
         """Startet den Client und liest dann Tastatureingaben des Benutzers."""
         # Verbindungspflege läuft im Hintergrund (daemon=True: stirbt mit dem Programm).
@@ -309,6 +314,16 @@ class ChatClient:
             sock.close()                               # Bei Fehler Socket schliessen.
             return None
 
+    def show_message(self, item: Dict) -> None:
+        """Zeigt eine geordnete Nachricht an - aber nur, wenn ihre Sequenznummer
+        neu ist. So wird der beim Reconnect mitgeschickte Verlauf nicht erneut
+        ausgegeben und jede Nachricht erscheint genau einmal."""
+        seq = item.get("sequence", 0)
+        if seq <= self.last_seen_seq:
+            return
+        self.last_seen_seq = seq
+        print(f"#{seq} {item['sender_name']}: {item['text']}")
+
     def receive_until_disconnect(self, sock: socket.socket) -> None:
         """Empfängt und verarbeitet Nachrichten vom Server, bis die Verbindung
         endet. Läuft so lange, wie Daten kommen; bricht die Verbindung ab, kehrt
@@ -323,7 +338,7 @@ class ChatClient:
                     print(f"Joined room '{payload['room']}' as {payload['client_id']}")
                     print("Participants:", ", ".join(payload.get("participants", [])))
                     for item in payload.get("recent_messages", []):
-                        print(f"#{item['sequence']} {item['sender_name']}: {item['text']}")
+                        self.show_message(item)
 
                 elif msg_type == ORDERED_MESSAGE:
                     # Eine vom Coordinator nummerierte Chat-Nachricht.
@@ -334,8 +349,7 @@ class ChatClient:
                     if mid:
                         with self.lock:
                             self.outbox.pop(mid, None)
-                    # Nachricht anzeigen ('#sequence' = die globale Reihenfolge-Nummer).
-                    print(f"#{item['sequence']} {item['sender_name']}: {item['text']}")
+                    self.show_message(item)
 
                 elif msg_type == REDIRECT:
                     # Der Server ist nicht (mehr) der Coordinator -> Schleife verlassen,
